@@ -96,7 +96,7 @@ enable_network_honeypot.ask.en = "Enable network honeypot (OpenCanary on ports 2
 
 [resources]
 sources.main.url = "https://github.com/DanversKara/DecoyWatch_ynh/archive/refs/tags/v1.1.tar.gz"
-sources.main.sha256 = "3fac0193e3a4720c21dab3376091c568283cd6f64ab799f174056e9f8dc85269"
+sources.main.sha256 = "9b44c8efd82199edc6c8ce06caa9eaab35c6e2dc06082b4f613d4431830345d3"
 sources.main.in_subdir = true
 sources.main.format = "tar.gz"
 
