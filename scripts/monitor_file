@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+# FIX 1: --app flag was missing, causing WATCH_DIRS to be empty (unbound variable crash on line 13)
+app=$YNH_APP_INSTANCE_NAME
+WATCH_DIRS=$(ynh_app_setting_get --app="$app" --key=watch_dirs)
+
+if [[ -z "${WATCH_DIRS:-}" ]]; then
+    ynh_die --message="No watch directories configured for $app"
+fi
+
+# FIX 2: $file inside a double-quoted heredoc expands immediately (empty string).
+# Write a separate watcher wrapper script so ExecStart in systemd is clean
+# and the variable reference stays unexpanded until runtime.
+NOTIFY_SCRIPT="/opt/yunohost/${app}/scripts/notify"
+WATCHER_SCRIPT="/opt/yunohost/${app}/scripts/run_file_watcher.sh"
+
+cat > "$WATCHER_SCRIPT" << SCRIPT
+#!/bin/bash
+set -euo pipefail
+/usr/bin/inotifywait -mr -e access,modify,attrib ${WATCH_DIRS} --format '%w%f' | \
+  while IFS= read -r triggered_file; do
+    "${NOTIFY_SCRIPT}" "File Access Detected" "Decoy file touched: \${triggered_file}" warning || true
+  done
+SCRIPT
+chmod +x "$WATCHER_SCRIPT"
+
+cat > /etc/systemd/system/decoy-file-watch.service << EOF
+[Unit]
+Description=Decoy File Watcher for ${app}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${WATCHER_SCRIPT}
+Restart=always
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now decoy-file-watch

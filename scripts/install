@@ -1,0 +1,104 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+# FIX: In packaging v2, $app is set by helpers; don't redefine it manually
+# (Removing manual: app=$YNH_APP_INSTANCE_NAME which is redundant in v2)
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+user=$app
+
+# Collect arguments - these env vars are provided by YunoHost from manifest.toml
+notify_email="$YNH_APP_ARG_NOTIFY_EMAIL"
+email_method="${YNH_APP_ARG_EMAIL_METHOD:-local}"
+smtp_server="${YNH_APP_ARG_SMTP_SERVER:-}"
+smtp_port="${YNH_APP_ARG_SMTP_PORT:-587}"
+smtp_user="${YNH_APP_ARG_SMTP_USER:-}"
+smtp_password="${YNH_APP_ARG_SMTP_PASSWORD:-}"
+smtp_from="${YNH_APP_ARG_SMTP_FROM:-decoy-watch@$(hostname)}"
+watch_dirs="$YNH_APP_ARG_WATCH_DIRS"
+monitoring_mode="$YNH_APP_ARG_MONITORING_MODE"
+decoy_types="$YNH_APP_ARG_DECOY_TYPES"
+enable_network_honeypot="$YNH_APP_ARG_ENABLE_NETWORK_HONEYPOT"
+
+ynh_script_progression --message="Preparing installation directory..."
+mkdir -p "$final_path"
+cp -a ../scripts "$final_path/"
+cp -a ../conf "$final_path/"
+
+# FIX: Only chmod +x actual scripts, not aide.conf (which is a config file)
+chmod +x \
+    "$final_path/scripts/backup" \
+    "$final_path/scripts/configure" \
+    "$final_path/scripts/find_free_port" \
+    "$final_path/scripts/generate_decoys" \
+    "$final_path/scripts/install" \
+    "$final_path/scripts/monitor_file" \
+    "$final_path/scripts/notify" \
+    "$final_path/scripts/remove" \
+    "$final_path/scripts/restore" \
+    "$final_path/scripts/setup_aide" \
+    "$final_path/scripts/setup_network_honeypot" \
+    "$final_path/scripts/webhook_handler.py" \
+    "$final_path/scripts/_common"
+
+# Setup Python virtual environment (for OpenCanary/network honeypot)
+if [[ "$enable_network_honeypot" == "1" || "$enable_network_honeypot" == "true" ]]; then
+    ynh_script_progression --message="Setting up Python environment for network honeypot..."
+    python3 -m venv "$final_path/venv"
+    "$final_path/venv/bin/pip" install --upgrade pip setuptools wheel
+    "$final_path/venv/bin/pip" install \
+        "flask>=2.2.0" \
+        "requests>=2.28.0" \
+        "opencanary>=0.9.0,<0.10.0" \
+        "zope.interface>=5.0.0"
+fi
+
+# Store settings
+ynh_app_setting_set --app="$app" --key=notify_email    --value="$notify_email"
+ynh_app_setting_set --app="$app" --key=email_method    --value="$email_method"
+ynh_app_setting_set --app="$app" --key=smtp_server     --value="$smtp_server"
+ynh_app_setting_set --app="$app" --key=smtp_port       --value="$smtp_port"
+ynh_app_setting_set --app="$app" --key=smtp_user       --value="$smtp_user"
+ynh_app_setting_set --app="$app" --key=smtp_password   --value="$smtp_password"
+ynh_app_setting_set --app="$app" --key=smtp_from       --value="$smtp_from"
+ynh_app_setting_set --app="$app" --key=watch_dirs      --value="$watch_dirs"
+ynh_app_setting_set --app="$app" --key=monitoring_mode --value="$monitoring_mode"
+ynh_app_setting_set --app="$app" --key=decoy_types     --value="$decoy_types"
+ynh_app_setting_set --app="$app" --key=enable_network_honeypot --value="$enable_network_honeypot"
+
+# Generate decoy files
+ynh_script_progression --message="Generating decoy files..."
+bash "$final_path/scripts/generate_decoys" "$watch_dirs" "$decoy_types"
+
+# Setup file monitoring
+if [[ "$monitoring_mode" == "inotify" || "$monitoring_mode" == "both" ]]; then
+    ynh_script_progression --message="Setting up inotify file monitoring..."
+    bash "$final_path/scripts/monitor_file"
+fi
+
+# Setup AIDE monitoring
+if [[ "$monitoring_mode" == "aide" || "$monitoring_mode" == "both" ]]; then
+    ynh_script_progression --message="Initializing AIDE database..."
+    bash "$final_path/scripts/setup_aide" "$watch_dirs"
+fi
+
+# Setup network honeypot
+if [[ "$enable_network_honeypot" == "1" || "$enable_network_honeypot" == "true" ]]; then
+    ynh_script_progression --message="Setting up network honeypot..."
+    bash "$final_path/scripts/setup_network_honeypot"
+fi
+
+# Set permissions
+chown -R "$user":"$user" "$final_path"
+
+# Test email notification (non-fatal)
+ynh_script_progression --message="Testing email notification..."
+if bash "$final_path/scripts/notify" "DecoyWatch Installed" "Installation successful! Alerts will be sent to: ${notify_email}" info; then
+    ynh_script_progression --message="Email test sent successfully"
+else
+    ynh_script_progression --message="Email test failed - check mail configuration after install"
+fi
+
+ynh_script_progression --message="Installation of $app completed" --last

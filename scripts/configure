@@ -1,0 +1,71 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+# FIX: Use $app from helpers context; --app flag was missing from ynh_app_setting_get calls
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+
+# Get current settings as defaults
+current_watch_dirs=$(ynh_app_setting_get --app="$app" --key=watch_dirs)
+current_monitoring_mode=$(ynh_app_setting_get --app="$app" --key=monitoring_mode)
+current_enable_network=$(ynh_app_setting_get --app="$app" --key=enable_network_honeypot)
+current_notify_email=$(ynh_app_setting_get --app="$app" --key=notify_email)
+current_email_method=$(ynh_app_setting_get --app="$app" --key=email_method)
+current_smtp_server=$(ynh_app_setting_get --app="$app" --key=smtp_server)
+current_smtp_port=$(ynh_app_setting_get --app="$app" --key=smtp_port)
+current_smtp_user=$(ynh_app_setting_get --app="$app" --key=smtp_user)
+current_smtp_password=$(ynh_app_setting_get --app="$app" --key=smtp_password)
+
+# Use provided values or keep current
+# FIX: Removed telegram references - they are not in the manifest and don't exist
+watch_dirs="${YNH_APP_ARG_WATCH_DIRS:-$current_watch_dirs}"
+monitoring_mode="${YNH_APP_ARG_MONITORING_MODE:-$current_monitoring_mode}"
+enable_network="${YNH_APP_ARG_ENABLE_NETWORK_HONEYPOT:-$current_enable_network}"
+notify_email="${YNH_APP_ARG_NOTIFY_EMAIL:-$current_notify_email}"
+email_method="${YNH_APP_ARG_EMAIL_METHOD:-$current_email_method}"
+smtp_server="${YNH_APP_ARG_SMTP_SERVER:-$current_smtp_server}"
+smtp_port="${YNH_APP_ARG_SMTP_PORT:-$current_smtp_port}"
+smtp_user="${YNH_APP_ARG_SMTP_USER:-$current_smtp_user}"
+smtp_password="${YNH_APP_ARG_SMTP_PASSWORD:-$current_smtp_password}"
+
+# Update settings (only if non-empty)
+[[ -n "${watch_dirs:-}" ]]      && ynh_app_setting_set --app="$app" --key=watch_dirs      --value="$watch_dirs"
+[[ -n "${monitoring_mode:-}" ]] && ynh_app_setting_set --app="$app" --key=monitoring_mode --value="$monitoring_mode"
+[[ -n "${enable_network:-}" ]]  && ynh_app_setting_set --app="$app" --key=enable_network_honeypot --value="$enable_network"
+[[ -n "${notify_email:-}" ]]    && ynh_app_setting_set --app="$app" --key=notify_email    --value="$notify_email"
+[[ -n "${email_method:-}" ]]    && ynh_app_setting_set --app="$app" --key=email_method    --value="$email_method"
+[[ -n "${smtp_server:-}" ]]     && ynh_app_setting_set --app="$app" --key=smtp_server     --value="$smtp_server"
+[[ -n "${smtp_port:-}" ]]       && ynh_app_setting_set --app="$app" --key=smtp_port       --value="$smtp_port"
+[[ -n "${smtp_user:-}" ]]       && ynh_app_setting_set --app="$app" --key=smtp_user       --value="$smtp_user"
+[[ -n "${smtp_password:-}" ]]   && ynh_app_setting_set --app="$app" --key=smtp_password   --value="$smtp_password"
+
+# Regenerate decoys if watch_dirs changed
+if [[ "$watch_dirs" != "$current_watch_dirs" ]]; then
+    ynh_script_progression --message="Regenerating decoy files..."
+    bash "$final_path/scripts/generate_decoys" "$watch_dirs"
+fi
+
+# Restart file monitor if monitoring mode changed
+if [[ "$monitoring_mode" != "$current_monitoring_mode" ]]; then
+    ynh_script_progression --message="Updating file monitoring..."
+    systemctl stop decoy-file-watch 2>/dev/null || true
+    if [[ "$monitoring_mode" == "inotify" || "$monitoring_mode" == "both" ]]; then
+        bash "$final_path/scripts/monitor_file"
+    fi
+fi
+
+# Toggle network honeypot if changed
+if [[ "${enable_network:-}" != "${current_enable_network:-}" ]]; then
+    ynh_script_progression --message="Updating network honeypot..."
+    if [[ "$enable_network" == "1" || "$enable_network" == "true" ]]; then
+        systemctl start decoy-net-honeypot 2>/dev/null || true
+    else
+        systemctl stop decoy-net-honeypot 2>/dev/null || true
+    fi
+fi
+
+systemctl daemon-reload 2>/dev/null || true
+
+ynh_script_progression --message="Configuration updated" --last

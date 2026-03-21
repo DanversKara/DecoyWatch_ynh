@@ -1,0 +1,99 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+venv="$final_path/venv"
+
+# Read ports provisioned by YunoHost resource manager
+ssh_decoy_port=$(ynh_app_setting_get --app="$app" --key=ssh_decoy_port)
+http_decoy_port=$(ynh_app_setting_get --app="$app" --key=http_decoy_port)
+webhook_port=$(ynh_app_setting_get --app="$app" --key=webhook_port)
+notify_email=$(ynh_app_setting_get --app="$app" --key=notify_email)
+domain=$(ynh_app_setting_get --app="$app" --key=domain)
+
+# Use manifest port defaults if setting not yet stored
+ssh_decoy_port="${ssh_decoy_port:-2222}"
+http_decoy_port="${http_decoy_port:-8088}"
+webhook_port="${webhook_port:-18080}"
+
+mkdir -p /etc/opencanaryd
+mkdir -p /var/log/decoy_watch
+mkdir -p "$final_path/conf/honeyfs"
+
+# Generate opencanary.conf from template, substituting real port values
+sed \
+    -e "s|__APP_DOMAIN__|${domain}|g" \
+    -e "s|__SSH_DECOY_PORT__|${ssh_decoy_port}|g" \
+    -e "s|__HTTP_DECOY_PORT__|${http_decoy_port}|g" \
+    -e "s|__WEBHOOK_PORT__|${webhook_port}|g" \
+    -e "s|__ALERT_EMAIL__|${notify_email}|g" \
+    "$final_path/conf/opencanary.conf" > /etc/opencanaryd/opencanary.conf
+
+chmod 640 /etc/opencanaryd/opencanary.conf
+
+# Simple HTTP decoy landing page
+cat > "$final_path/conf/honeyfs/index.html" << 'EOF'
+<!DOCTYPE html>
+<html><head><title>404 Not Found</title></head>
+<body><h1>404</h1><p>Not Found</p></body></html>
+EOF
+
+# Setup log files with correct ownership
+touch /var/log/decoy_watch/opencanary.log
+chown -R "$app":"$app" /var/log/decoy_watch
+
+# Create systemd service for OpenCanary
+cat > /etc/systemd/system/decoy-net-honeypot.service << EOF
+[Unit]
+Description=Decoy Network Honeypot (OpenCanary) for ${app}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${venv}/bin/opencanaryd --dev
+Restart=always
+RestartSec=10
+User=root
+Environment=OPENCANARY_CONF=/etc/opencanaryd/opencanary.conf
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create systemd service for the Flask webhook handler
+cat > /etc/systemd/system/decoy-webhook.service << EOF
+[Unit]
+Description=DecoyWatch Webhook Handler for ${app}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${venv}/bin/python3 ${final_path}/scripts/webhook_handler.py
+Restart=always
+RestartSec=5
+User=${app}
+Environment=APP_DIR=${final_path}
+Environment=WEBHOOK_PORT=${webhook_port}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+chmod 644 \
+    /etc/systemd/system/decoy-net-honeypot.service \
+    /etc/systemd/system/decoy-webhook.service
+
+systemctl daemon-reload
+systemctl enable --now decoy-net-honeypot 2>/dev/null || \
+    ynh_print_warn --message="Could not start decoy-net-honeypot - run: systemctl start decoy-net-honeypot"
+systemctl enable --now decoy-webhook 2>/dev/null || \
+    ynh_print_warn --message="Could not start decoy-webhook - run: systemctl start decoy-webhook"
+
+ynh_print_info --message="Network honeypot configured on ports ${ssh_decoy_port} (SSH) and ${http_decoy_port} (HTTP)"

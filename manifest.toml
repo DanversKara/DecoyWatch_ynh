@@ -1,0 +1,167 @@
+packaging_format = 2
+
+id = "decoy_watch"
+name = "Decoy Watch"
+description.en = "Open-source honeypot monitor: detect unauthorized access to backup files & decoy credentials. Alerts via email."
+description.fr = "Surveillance honeypot open-source : détectez les accès non autorisés aux fichiers de sauvegarde et identifiants factices. Alertes par email."
+
+version = "3.0~ynh1"
+icon = "icon.png"
+maintainers = ["DanversKara"]
+
+[upstream]
+license = "BSD-3-Clause AND GPL-2.0-only AND MIT"
+website = "https://github.com/DanversKara/DecoyWatch_ynh"
+admindoc = "https://github.com/DanversKara/DecoyWatch_ynh/blob/main/README.md"
+code = "https://github.com/DanversKara/DecoyWatch_ynh"
+
+[integration]
+yunohost = ">= 12.1.17"
+helpers_version = "2.1"
+architectures = "all"
+multi_instance = true
+ldap = "false"
+sso = "false"
+disk = "500M"
+ram.build = "256M"
+ram.runtime = "128M"
+
+[install]
+domain.type = "domain"
+domain.ask.en = "Domain for webhook endpoint"
+
+path.type = "path"
+path.default = "/decoywatch"
+path.ask.en = "URL path"
+
+init_main_permission.type = "group"
+init_main_permission.default = "admins"
+
+notify_email.type = "string"
+notify_email.optional = false
+notify_email.ask.en = "Email address to receive alerts"
+notify_email.example = "admin@yourdomain.tld"
+notify_email.help.en = "Enter the email address where you want to receive security alerts."
+
+email_method.type = "select"
+email_method.choices = ["local", "smtp"]
+email_method.default = "local"
+email_method.ask.en = "Email delivery method"
+email_method.help.en = "Local = Use YunoHost mail system. SMTP = Use external SMTP server."
+
+smtp_server.type = "string"
+smtp_server.optional = true
+smtp_server.ask.en = "SMTP server hostname (e.g., smtp.gmail.com)"
+smtp_server.example = "smtp.gmail.com"
+
+# FIX: smtp_port must be type "select" when choices is specified (was "string" + choices which is invalid)
+smtp_port.type = "select"
+smtp_port.optional = true
+smtp_port.default = "587"
+smtp_port.ask.en = "SMTP port"
+smtp_port.choices = ["25", "465", "587"]
+
+smtp_user.type = "string"
+smtp_user.optional = true
+smtp_user.ask.en = "SMTP username (usually your email address)"
+
+smtp_password.type = "password"
+smtp_password.optional = true
+smtp_password.ask.en = "SMTP password or app-specific password"
+
+smtp_from.type = "string"
+smtp_from.optional = true
+smtp_from.default = "decoy-watch@localhost"
+smtp_from.ask.en = "From email address for alerts"
+
+watch_dirs.type = "string"
+watch_dirs.default = "/home/yunohost.backup/archives"
+watch_dirs.ask.en = "Directories to monitor (comma-separated)"
+watch_dirs.pattern.regexp = "^(/[a-zA-Z0-9_./-]+)(,/[a-zA-Z0-9_./-]+)*$"
+watch_dirs.pattern.error = "Must be one or more absolute paths separated by commas"
+
+monitoring_mode.type = "select"
+monitoring_mode.choices = ["inotify", "aide", "both"]
+monitoring_mode.default = "inotify"
+monitoring_mode.ask.en = "File monitoring backend"
+
+decoy_types.type = "select"
+decoy_types.choices = ["aws", "database", "ssh", "all"]
+decoy_types.default = "all"
+decoy_types.ask.en = "Types of decoy files to generate"
+
+enable_network_honeypot.type = "boolean"
+enable_network_honeypot.default = true
+enable_network_honeypot.ask.en = "Enable network honeypot (OpenCanary on ports 2222/8088)?"
+
+[resources]
+sources.main.url = "https://github.com/DanversKara/DecoyWatch_ynh/archive/refs/tags/v1.1.tar.gz"
+sources.main.sha256 = "773f2da956dd357ea47d56bf599fc8ea862f7a9b65788ffdcbb197d134d1c775"
+sources.main.in_subdir = true
+sources.main.format = "tar.gz"
+
+system_user.allow_shell = false
+system_user.home = "/opt/yunohost/decoy_watch"
+
+data_dir.subdirs = ["decoys", "logs", "webhooks"]
+
+permissions.main.url = "/"
+permissions.main.allowed = "admins"
+permissions.main.show_tile = false
+
+# FIX: Port resource keys must match what scripts read via ynh_app_setting_get
+# YunoHost stores them as <portname>_port  (e.g. ports.webhook -> webhook_port)
+ports.webhook.default = 18080
+ports.webhook.exposed = false
+ports.webhook.description.en = "Internal webhook receiver for OpenCanary alerts"
+
+ports.ssh_decoy.default = 2222
+ports.ssh_decoy.exposed = "tcp"
+ports.ssh_decoy.description.en = "SSH honeypot listener"
+
+ports.http_decoy.default = 8088
+ports.http_decoy.exposed = "tcp"
+ports.http_decoy.description.en = "HTTP honeypot listener"
+
+[actions.configure]
+description.en = "Update notification and monitoring settings"
+
+parameters.notify_email.type = "string"
+parameters.notify_email.optional = true
+parameters.notify_email.ask.en = "Email address for alerts"
+
+parameters.email_method.type = "select"
+parameters.email_method.choices = ["local", "smtp"]
+parameters.email_method.optional = true
+parameters.email_method.ask.en = "Email delivery method"
+
+parameters.smtp_server.type = "string"
+parameters.smtp_server.optional = true
+parameters.smtp_server.ask.en = "SMTP server hostname"
+
+parameters.smtp_port.type = "select"
+parameters.smtp_port.choices = ["25", "465", "587"]
+parameters.smtp_port.optional = true
+parameters.smtp_port.ask.en = "SMTP port"
+
+parameters.smtp_user.type = "string"
+parameters.smtp_user.optional = true
+parameters.smtp_user.ask.en = "SMTP username"
+
+parameters.smtp_password.type = "password"
+parameters.smtp_password.optional = true
+parameters.smtp_password.ask.en = "SMTP password"
+
+[resources.apt]
+packages = [
+  "python3",
+  "python3-pip",
+  "python3-venv",
+  "aide",
+  "aide-common",
+  "inotify-tools",
+  "curl",
+  "jq",
+  "mailutils",
+  "bsd-mailx"
+]

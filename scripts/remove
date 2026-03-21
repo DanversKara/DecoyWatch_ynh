@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+
+# Stop and disable services
+systemctl stop decoy-file-watch 2>/dev/null || true
+systemctl disable decoy-file-watch 2>/dev/null || true
+systemctl stop decoy-net-honeypot 2>/dev/null || true
+systemctl disable decoy-net-honeypot 2>/dev/null || true
+systemctl stop decoy-aide-check.timer 2>/dev/null || true
+systemctl disable decoy-aide-check.timer 2>/dev/null || true
+
+# Remove systemd unit files
+rm -f /etc/systemd/system/decoy-file-watch.service
+rm -f /etc/systemd/system/decoy-net-honeypot.service
+rm -f /etc/systemd/system/decoy-aide-check.service
+rm -f /etc/systemd/system/decoy-aide-check.timer
+systemctl daemon-reload
+
+# FIX: Use ynh_safe_rm instead of raw rm -rf on variable paths
+ynh_safe_rm "$final_path"
+ynh_safe_rm /etc/opencanaryd
+ynh_safe_rm /var/log/decoy_watch
+ynh_safe_rm /etc/aide/aide.conf.d/decoy_watch.conf
+
+ynh_script_progression --message="App $app successfully removed" --last

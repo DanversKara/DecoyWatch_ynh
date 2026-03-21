@@ -1,0 +1,25 @@
+#!/bin/bash
+# Common helper functions for Decoy Watch
+
+# Find free port in range
+find_free_port() {
+    local start="${1:-8000}" end="${2:-9000}" proto="${3:-tcp}"
+    for port in $(seq "$start" "$end"); do
+        if ! ss -"${proto:0:1}"l4n "( sport = :$port )" 2>/dev/null | grep -q ":$port "; then
+            echo "$port"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Send notification using the notify script
+send_notification() {
+    local title="$1" message="$2" severity="${3:-info}"
+    local app="${app:-$YNH_APP_INSTANCE_NAME}"
+    local notify_script="/opt/yunohost/${app}/scripts/notify"
+
+    if [[ -x "$notify_script" ]]; then
+        bash "$notify_script" "$title" "$message" "$severity" || true
+    fi
+}

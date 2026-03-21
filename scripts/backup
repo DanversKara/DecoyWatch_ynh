@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+
+# FIX: Backup the correct paths; original backed up /var/www/decoy_watch which doesn't exist
+ynh_backup "/etc/aide/aide.conf.d/decoy_watch.conf"
+ynh_backup "/etc/opencanaryd"
+ynh_backup "$final_path/conf"
+
+ynh_script_progression --message="Backup of $app completed" --last

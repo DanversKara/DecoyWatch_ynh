@@ -1,0 +1,45 @@
+#!/bin/bash
+set -euo pipefail
+
+WATCH_DIRS="${1:-/home/BACKUP_USER/backups}"
+DECOY_TYPES="${2:-all}"
+
+mkdir -p "$WATCH_DIRS"
+
+# Generate decoy files based on type
+if [[ "$DECOY_TYPES" == "aws" || "$DECOY_TYPES" == "all" ]]; then
+  cat > "$WATCH_DIRS/aws_credentials.fake" << 'EOF'
+# DECOY FILE - MONITORED - DO NOT USE FOR REAL CREDENTIALS
+[default]
+aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+EOF
+fi
+
+if [[ "$DECOY_TYPES" == "database" || "$DECOY_TYPES" == "all" ]]; then
+  cat > "$WATCH_DIRS/database_backup.sql.fake" << 'EOF'
+-- DECOY FILE - MONITORED - DO NOT USE FOR REAL DATA
+-- PostgreSQL backup dump (fake)
+CREATE TABLE users (id SERIAL, username VARCHAR(100), password_hash VARCHAR(255));
+INSERT INTO users VALUES (1, 'admin', 'fake_hash_do_not_use');
+EOF
+fi
+
+if [[ "$DECOY_TYPES" == "ssh" || "$DECOY_TYPES" == "all" ]]; then
+  cat > "$WATCH_DIRS/ssh_key.pem.fake" << 'EOF'
+-----BEGIN RSA PRIVATE KEY-----
+# DECOY FILE - MONITORED - DO NOT USE FOR REAL KEYS
+# This is a fake SSH private key for honeypot purposes only
+MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy...FAKE...KEY...DATA
+-----END RSA PRIVATE KEY-----
+EOF
+fi
+
+# Set secure permissions
+chmod 440 "$WATCH_DIRS"/*.fake
+chown root:root "$WATCH_DIRS"/*.fake
+
+# Create marker file
+touch "$WATCH_DIRS/.decoy_watch_marker"
+
+echo "✓ Generated decoy files in $WATCH_DIRS"

@@ -1,0 +1,30 @@
+# Local testing files
+scripts/*.local
+*.env
+*.local
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+/var/log/decoy_watch/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# YunoHost cache
+/var/cache/yunohost/

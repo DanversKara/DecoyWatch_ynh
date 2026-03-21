@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+app=$YNH_APP_INSTANCE_NAME
+final_path="/opt/yunohost/$app"
+
+# FIX: Restore from correct paths matching what backup script saves
+ynh_restore_file "/etc/aide/aide.conf.d/decoy_watch.conf"
+ynh_restore_file "/etc/opencanaryd"
+ynh_restore_file "$final_path/conf"
+
+ynh_script_progression --message="Restore of $app completed" --last

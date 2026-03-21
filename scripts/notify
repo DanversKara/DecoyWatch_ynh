@@ -1,0 +1,62 @@
+#!/bin/bash
+# DecoyWatch notification script
+# Usage: notify "Title" "Message" [severity]
+set -euo pipefail
+
+source /usr/share/yunohost/helpers
+
+app=$YNH_APP_INSTANCE_NAME
+TITLE="${1:-DecoyWatch Alert}"
+MESSAGE="${2:-No message}"
+SEVERITY="${3:-info}"
+
+notify_email=$(ynh_app_setting_get --app="$app" --key=notify_email)
+email_method=$(ynh_app_setting_get --app="$app" --key=email_method)
+smtp_server=$(ynh_app_setting_get --app="$app" --key=smtp_server)
+smtp_port=$(ynh_app_setting_get --app="$app" --key=smtp_port)
+smtp_user=$(ynh_app_setting_get --app="$app" --key=smtp_user)
+smtp_password=$(ynh_app_setting_get --app="$app" --key=smtp_password)
+smtp_from=$(ynh_app_setting_get --app="$app" --key=smtp_from)
+
+if [[ -z "${notify_email:-}" ]]; then
+    ynh_print_warn --message="No notify_email configured, skipping notification"
+    exit 0
+fi
+
+SUBJECT="[DecoyWatch][${SEVERITY^^}] ${TITLE}"
+BODY="DecoyWatch Security Alert
+==========================
+Title:    ${TITLE}
+Severity: ${SEVERITY}
+Time:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+${MESSAGE}
+
+---
+Sent by DecoyWatch on $(hostname)
+"
+
+if [[ "${email_method:-local}" == "smtp" && -n "${smtp_server:-}" ]]; then
+    # External SMTP via curl
+    curl -s \
+        --url "smtp://${smtp_server}:${smtp_port}" \
+        --user "${smtp_user}:${smtp_password}" \
+        --mail-from "${smtp_from}" \
+        --mail-rcpt "${notify_email}" \
+        --upload-file - <<< "Subject: ${SUBJECT}
+From: ${smtp_from}
+To: ${notify_email}
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+${BODY}" || {
+        ynh_print_warn --message="SMTP send failed for: ${TITLE}"
+        exit 1
+    }
+else
+    # Local mail via sendmail/mailutils
+    echo "${BODY}" | mail -s "${SUBJECT}" "${notify_email}" || {
+        ynh_print_warn --message="Local mail send failed for: ${TITLE}"
+        exit 1
+    }
+fi

@@ -1,0 +1,13 @@
+#!/bin/bash
+# Simple port finder utility
+start="${1:-8000}"
+end="${2:-9000}"
+proto="${3:-tcp}"
+
+for port in $(seq "$start" "$end"); do
+  if ! ss -"${proto:0:1}"l4n "( sport = :$port )" 2>/dev/null | grep -q ":$port "; then
+    echo "$port"
+    exit 0
+  fi
+done
+exit 1
