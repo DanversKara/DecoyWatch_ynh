@@ -311,4 +311,4 @@ Full license texts: [doc/LICENSES.md](doc/LICENSES.md)
 
 ---
 
-*Decoy Watch — because the best defense is knowing when you've been probed.* 🪤
+*Decoy Watch — because the best defense is knowing when you've been probed.* 🛡️ “One Decoy at a Time” 🪤
